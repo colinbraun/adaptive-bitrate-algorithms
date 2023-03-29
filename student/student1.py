@@ -96,8 +96,10 @@ def student_entrypoint(client_message: ClientMessage):
         # Set the upper reservoir size to be at the 90% point (last 10% of buffer)
         upper_reservoir = 0.1 * client_message.buffer_max_size
     # print(client_message.previous_throughput)
-    rate_map(client_message)
-    return 0  # Let's see what happens if we select the lowest bitrate every time
+    chosen_index = rate_map(client_message)
+    print(f"Chosen quality index: {chosen_index}")
+    # return 0  # Let's see what happens if we select the lowest bitrate every time
+    return chosen_index
 
 first = True
 last_selected_index = 0
@@ -141,7 +143,16 @@ def rate_map(client_message: ClientMessage):
         return last_selected_index
     # TODO: Handle the middle (linear) section of the map from occupancy to video rate
     elif next_index != last_selected_index and mapped_rate >= bitrates[next_index]:
+        # Identify what next_index should be. Increment the index until mapped rate is no longer larger than the next index
+        while next_index < client_message.quality_levels - 1 and mapped_rate >= bitrates[next_index + 1]:
+            next_index += 1
         last_selected_index = next_index
+        return last_selected_index
+    elif prev_index != last_selected_index and mapped_rate <= bitrates[prev_index]:
+        # Identify what prev_index should be. Decrement the index until mapped rate is smaller than the previous index
+        while prev_index > 0 and mapped_rate <= bitrates[prev_index - 1]:
+            prev_index -= 1
+        last_selected_index = prev_index
         return last_selected_index
     else:
         # Otherwise just return the previous rate (don't change)
