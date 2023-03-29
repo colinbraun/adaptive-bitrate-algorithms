@@ -1,4 +1,5 @@
 from typing import List
+from pprint import pprint
 
 # Adapted from code by Zach Peats
 
@@ -84,4 +85,82 @@ def student_entrypoint(client_message: ClientMessage):
 
     :return: float Your quality choice. Must be one in the range [0 ... quality_levels - 1] inclusive.
     """
+    global first, min_rate, max_rate, X, upper_reservoir
+    # pprint(vars(client_message))
+    if first:
+        # print('first run')
+        min_rate, max_rate = find_extremes(client_message.upcoming_quality_bitrates)
+        print(f"Min rate: {min_rate}, Max rate: {max_rate}")
+        first = False
+        X = client_message.buffer_max_size * 2
+        # Set the upper reservoir size to be at the 90% point (last 10% of buffer)
+        upper_reservoir = 0.1 * client_message.buffer_max_size
+    # print(client_message.previous_throughput)
+    rate_map(client_message)
     return 0  # Let's see what happens if we select the lowest bitrate every time
+
+first = True
+last_selected_index = 0
+min_rate = None
+max_rate = None
+X = None
+upper_reservoir = None
+
+def rate_map(client_message: ClientMessage):
+    """
+    Maps buffer occupancy to a rate from among the rates provided. Prefers maintaining the last_selected_index.
+    """
+    global last_selected_index, min_rate, max_rate, X, upper_reservoir
+    bitrates = client_message.quality_bitrates
+    occupancy = client_message.buffer_seconds_until_empty / client_message.buffer_max_size
+    if client_message.previous_throughput == 0:
+        return 0
+    # print(X)
+    reservoir = X - client_message.previous_throughput / bitrates[last_selected_index] * client_message.buffer_seconds_per_chunk * X
+    # Make sure reservoir is a reasonable value
+    if reservoir < 3:
+        reservoir = 3
+    elif reservoir > client_message.buffer_max_size/2:
+        reservoir = client_message.buffer_max_size/2
+    # The cushion is whatever remains of the buffer that isn't lower or upper reservoir
+    cushion = client_message.buffer_max_size - reservoir - upper_reservoir
+    print(f"Reservoir: {reservoir}")
+    print(f"Occupancy: {occupancy}")
+    r_max = bitrates[client_message.quality_levels - 1]
+    r_min = bitrates[0]
+    slope = (r_max - r_min) / (client_message.buffer_seconds_until_empty - reservoir)
+    mapped_rate = (client_message.buffer_seconds_until_empty - reservoir) * slope
+    prev_index = last_selected_index - 1 if last_selected_index != 0 else last_selected_index
+    next_index = last_selected_index + 1 if last_selected_index != client_message.quality_levels - 1 else last_selected_index
+    if client_message.buffer_seconds_until_empty < reservoir:
+        # If our buffer is below the reservoir, choose the lowest quality.
+        last_selected_index = 0
+        return last_selected_index
+    elif client_message.buffer_seconds_until_empty >= reservoir + cushion:
+        last_selected_index = client_message.quality_levels - 1
+        return last_selected_index
+    # TODO: Handle the middle (linear) section of the map from occupancy to video rate
+    elif next_index != last_selected_index and mapped_rate >= bitrates[next_index]:
+        last_selected_index = next_index
+        return last_selected_index
+    else:
+        # Otherwise just return the previous rate (don't change)
+        return last_selected_index
+    
+
+
+
+def find_extremes(arr):
+    """
+    Find the minimum and maximum values in arr and return them. arr must be a list of lists
+    """
+    min_val = 30000000
+    max_val = -30000000
+    for sub_arr in arr:
+        for item in sub_arr:
+            if item < min_val:
+                min_val = item
+            if item > max_val:
+                max_val = item
+    
+    return min_val, max_val
