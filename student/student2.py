@@ -1,4 +1,7 @@
 from typing import List
+from collections import deque
+import statistics
+import itertools
 
 # Adapted from code by Zach Peats
 
@@ -84,4 +87,41 @@ def student_entrypoint(client_message: ClientMessage):
 
     :return: float Your quality choice. Must be one in the range [0 ... quality_levels - 1] inclusive.
     """
+    global first_chunks_count, prev_throughputs
+    # For the first 5 chunks, we can't predict a throughput. Just pick the lowest quality.
+    if first_chunks_count < 5:
+        first_chunks_count += 1
+        prev_throughputs.append(client_message.previous_throughput)
+        prev_throughputs.popleft()
+        return 0
+    # Update the previous throughputs
+    prev_throughputs.append(client_message.previous_throughput)
+    prev_throughputs.popleft()
+    # Predict the throughput
+    harmonic_mean = statistics.harmonic_mean(prev_throughputs)
+    error_max = max_error(prev_throughputs, harmonic_mean)
+    predicted_throughput = harmonic_mean / (1 + error_max)
+    # Combinations of possible choices of chunk qualities
+    combos = [p for p in itertools.product(*[client_message.quality_bitrates, *client_message.upcoming_quality_bitrates[0:W-1]])]
+    scores = [-100000000] * len(combos)
+    #   User Quality of Experience =    (Average chunk quality) * (Quality Coefficient) +
+    #                                   -(Number of changes in chunk quality) * (Variation Coefficient)
+    #                                   -(Amount of time spent rebuffering) * (Rebuffering Coefficient)
+
+
     return client_message.quality_levels - 1  # Let's see what happens if we select the highest bitrate every time
+
+first_chunks_count = 0
+prev_throughputs = deque([0]*5)
+W = 5
+
+def max_error(iterable, mean):
+    """
+    Compute the maximum absolute percentage error of the iterable from the given mean
+    """
+    error_max = 0
+    for item in iterable:
+        error = abs((item - mean) / mean)
+        if error > error_max:
+            error_max = error
+    return error_max
