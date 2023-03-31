@@ -107,12 +107,24 @@ def student_entrypoint(client_message: ClientMessage):
     #   User Quality of Experience =    (Average chunk quality) * (Quality Coefficient) +
     #                                   -(Number of changes in chunk quality) * (Variation Coefficient)
     #                                   -(Amount of time spent rebuffering) * (Rebuffering Coefficient)
+    # quality score is dependent on the index purely (0, 1, or 2  in the 3-option case)
+    # variation score is dependent on both number of times and how far, but still only on quality indices (0, 1, or 2 in the 3-option case)
+    # rebuffer score is dependent soley on how much time was spent rebuffering
+    best_combo = combos[0]
+    for combo in combos:
+        quality_score = statistics.mean(combo) * client_message.quality_coefficient
+        # TODO: Will need to create combos by index, not by quality levels in order to determine how many switches we have made with that decision
+        # Question: When we are scoring a choice of chunk qualities, should we be counting the number of quality switches in that choice?
+        # Or is it dependent on the difference in quality from chunk to chunk, like how the paper describes?
+        variation_score = 0
 
-
+        # Question: How to go about determining the time that would be spent rebuffering? I assume we base this on the predicted throughput and
+        # what the current buffer size would be at each chunk in the future
     return client_message.quality_levels - 1  # Let's see what happens if we select the highest bitrate every time
 
 first_chunks_count = 0
 prev_throughputs = deque([0]*5)
+last_selected_index = 0 
 W = 5
 
 def max_error(iterable, mean):
