@@ -92,7 +92,7 @@ def student_entrypoint(client_message: ClientMessage):
     if first:
         # print('first run')
         min_rate, max_rate = find_extremes(client_message.upcoming_quality_bitrates)
-        print(f"Min rate: {min_rate}, Max rate: {max_rate}")
+        log(f"Min rate: {min_rate}, Max rate: {max_rate}")
         first = False
         X = client_message.buffer_max_size * 2
         # Set the upper reservoir size to be at the 90% point (last 10% of buffer)
@@ -111,7 +111,7 @@ def student_entrypoint(client_message: ClientMessage):
             startup_index = last_selected_index + 1 if last_selected_index != client_message.quality_levels - 1 else last_selected_index
             chunk_map_index = rate_map(client_message, last_selected_index)
             if chunk_map_index > startup_index:
-                print(f"Exiting startup phase due to chunk map index suggesting higher (startup index: {startup_index}, chunk map index: {chunk_map_index})")
+                log(f"Exiting startup phase due to chunk map index suggesting higher (startup index: {startup_index}, chunk map index: {chunk_map_index})")
                 startup = False
                 last_selected_index = chunk_map_index
                 return chunk_map_index
@@ -119,7 +119,7 @@ def student_entrypoint(client_message: ClientMessage):
                 last_selected_index = startup_index
                 return startup_index
         elif delta_b < 0:
-            print(f"Exiting startup phase due buffer size decreasing (delta B < 0)")
+            log(f"Exiting startup phase due buffer size decreasing (delta B < 0)")
             startup = False
             # Don't return here, move to next section to choose the quality index
         else:
@@ -128,9 +128,9 @@ def student_entrypoint(client_message: ClientMessage):
     # -------------------STARTUP PHASE END-------------------
 
     # ---------------STEADY STATE PHASE START------------------
-    # print(client_message.previous_throughput)
+    # log(client_message.previous_throughput)
     chosen_index = rate_map(client_message, last_selected_index)
-    # print(f"Chosen quality index: {chosen_index}")
+    # log(f"Chosen quality index: {chosen_index}")
     # return 0  # Let's see what happens if we select the lowest bitrate every time
     last_selected_index = chosen_index
     return chosen_index
@@ -154,7 +154,7 @@ def rate_map(client_message: ClientMessage, last_selected_index):
     occupancy = client_message.buffer_seconds_until_empty / client_message.buffer_max_size
     if client_message.previous_throughput == 0:
         return 0
-    # print(X)
+    # log(X)
     # reservoir = X - client_message.previous_throughput / bitrates[last_selected_index] * client_message.buffer_seconds_per_chunk * X
     # # Make sure reservoir is a reasonable value (follows the idea in the paper)
     # if reservoir < 2:
@@ -166,27 +166,27 @@ def rate_map(client_message: ClientMessage, last_selected_index):
     reservoir = client_message.buffer_max_size / 3
     # The cushion is whatever remains of the buffer that isn't lower or upper reservoir
     cushion = client_message.buffer_max_size - reservoir - upper_reservoir
-    print(f"Occupancy: {occupancy}")
+    log(f"Occupancy: {occupancy}")
     r_max = bitrates[client_message.quality_levels - 1]
     r_min = bitrates[0]
     # r_max = max_rate
     # r_min = min_rate
     # slope = (r_max - r_min) / (client_message.buffer_seconds_until_empty - reservoir)
     slope = (r_max - r_min) / cushion
-    # print(f"Buffer seconds until empty: {client_message.buffer_seconds_until_empty}")
-    print(f"Reservoir: {reservoir}")
-    # print(f"Slope: {slope}")
+    # log(f"Buffer seconds until empty: {client_message.buffer_seconds_until_empty}")
+    log(f"Reservoir: {reservoir}")
+    # log(f"Slope: {slope}")
     mapped_rate = (client_message.buffer_seconds_until_empty - reservoir) * slope + r_min
     prev_index = last_selected_index - 1 if last_selected_index != 0 else last_selected_index
     next_index = last_selected_index + 1 if last_selected_index != client_message.quality_levels - 1 else last_selected_index
     if client_message.buffer_seconds_until_empty < reservoir:
         # If our buffer is below the reservoir, choose the lowest quality.
         chosen_index = 0
-        print(f"Choosing quality index {chosen_index} because buffer ({client_message.buffer_seconds_until_empty}) below reservoir ({reservoir})")
+        log(f"Choosing quality index {chosen_index} because buffer ({client_message.buffer_seconds_until_empty}) below reservoir ({reservoir})")
         return chosen_index
     elif client_message.buffer_seconds_until_empty >= reservoir + cushion:
         chosen_index = client_message.quality_levels - 1
-        print(f"Choosing quality index {chosen_index} because buffer ({client_message.buffer_seconds_until_empty}) is above upper reservoir")
+        log(f"Choosing quality index {chosen_index} because buffer ({client_message.buffer_seconds_until_empty}) is above upper reservoir")
         return chosen_index
     # TODO: Handle the middle (linear) section of the map from occupancy to video rate
     elif next_index != last_selected_index and mapped_rate >= bitrates[next_index]:
@@ -194,7 +194,7 @@ def rate_map(client_message: ClientMessage, last_selected_index):
         while next_index < client_message.quality_levels - 1 and mapped_rate >= bitrates[next_index + 1]:
             next_index += 1
         chosen_index = next_index
-        print(f"UChoosing quality index {chosen_index} based on mapped rate. reservoir = {reservoir}, mapped_rate = {mapped_rate}, choices = {bitrates}")
+        log(f"UChoosing quality index {chosen_index} based on mapped rate. reservoir = {reservoir}, mapped_rate = {mapped_rate}, choices = {bitrates}")
         return chosen_index
     elif prev_index != last_selected_index and mapped_rate <= bitrates[prev_index]:
         # Identify what prev_index should be. Decrement the index until mapped rate is smaller than the previous index
@@ -204,11 +204,11 @@ def rate_map(client_message: ClientMessage, last_selected_index):
         # If we previously chose the max quality, stick to it more aggressively (only switch if differs by 2 levels or more)
         # if last_selected_index == client_message.quality_levels - 1 and last_selected_index - chosen_index < 2:
         #     chosen_index = last_selected_index
-        print(f"DChoosing quality index {chosen_index} based on mapped rate. reservoir = {reservoir}, mapped_rate = {mapped_rate}, choices = {bitrates}")
+        log(f"DChoosing quality index {chosen_index} based on mapped rate. reservoir = {reservoir}, mapped_rate = {mapped_rate}, choices = {bitrates}")
         return chosen_index
     else:
         # Otherwise just return the previous rate (don't change)
-        print(f"Choosing quality index {last_selected_index} based on mapped rate. reservoir = {reservoir}, mapped_rate = {mapped_rate}, choices = {bitrates}")
+        log(f"Choosing quality index {last_selected_index} based on mapped rate. reservoir = {reservoir}, mapped_rate = {mapped_rate}, choices = {bitrates}")
         return last_selected_index
     
 
@@ -226,3 +226,8 @@ def find_extremes(arr):
                 max_val = item
     
     return min_val, max_val
+
+DEBUG = False
+def log(s):
+    if DEBUG:
+        print(s)

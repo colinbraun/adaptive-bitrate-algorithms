@@ -5,3 +5,4 @@ RESULT (3): This makes a small improvement in lower BW cases, but slightly worse
 In higher bandwidth cases, rebuffering becomes rare, but variation still plays a significant role.
 - We could try to address cases like these by being stickier once we have reached the max quality, waiting until we cross the minimum quality point first (2 quality level stickiness in a more general case).
 RESULT (4): There is little impact on performance from this. It is actually a tiny bit worse (not noticable).
+- We could try a different sticky approach yet again. Stick with the top quality until we reach the threshold that is half way (or some other fraction) between 1 and 2 qualities below the highest quality.
