@@ -1,0 +1,7 @@
+In low bandwidth cases, we are concerned with both rebuffer time AND variation (there is little that can be done about quality in this case). The reservoir plays a more signifcant role in this case, especially higher variance cases. It can cause a lot of switching between quality levels 0 and 1 if the dynamic reservoir shoots up and down over and over again. We should try to address this with a different mechanism.
+- One idea might be just having a constant reservoir size (say 1/3 the max buffer size)
+RESULT (3): This makes a small improvement in lower BW cases, but slightly worsens high BW cases (though not as much as the low BW improves)
+
+In higher bandwidth cases, rebuffering becomes rare, but variation still plays a significant role.
+- We could try to address cases like these by being stickier once we have reached the max quality, waiting until we cross the minimum quality point first (2 quality level stickiness in a more general case).
+RESULT (4): There is little impact on performance from this. It is actually a tiny bit worse (not noticable).

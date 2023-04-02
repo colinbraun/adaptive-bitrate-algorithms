@@ -1,0 +1,21 @@
+BASELINE CASE (1):
+lo_avg_lo_var: 0.037
+lo_avg_mi_var: 0.070
+lo_avg_hi_var: 0.610
+mi_avg_lo_var: 1.636
+mi_avg_mi_var: 1.109
+mi_avg_hi_var: 1.719
+hi_avg_lo_var: 2.674
+hi_avg_mi_var: 3.043
+hi_avg_hi_var: 2.755
+
+(3):
+lo_avg_lo_var: 0.094
+lo_avg_mi_var: 0.302
+lo_avg_hi_var: 0.714
+mi_avg_lo_var: 1.762
+mi_avg_mi_var: 1.042
+mi_avg_hi_var: 1.631
+hi_avg_lo_var: 2.641
+hi_avg_mi_var: 2.951
+hi_avg_hi_var: 2.729
