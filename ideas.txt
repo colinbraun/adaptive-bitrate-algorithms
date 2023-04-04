@@ -7,4 +7,8 @@ In higher bandwidth cases, rebuffering becomes rare, but variation still plays a
 RESULT (4): There is little impact on performance from this. It is actually a tiny bit worse (not noticable).
 - We could try a different sticky approach yet again. Stick with the top quality until we reach the threshold that is half way (or some other fraction) between 1 and 2 qualities below the highest quality.
 RESULT (5): Very little impact once again, even less noticable.
-- We could try having a variable upper reservoir based on average throughput of past ~5 or so iterations. High throughput -> upper reservoir at lower buffer size.
+- We could try having a variable upper reservoir based on average throughput of past ~5 or so iterations. High throughput -> upper reservoir at lower buffer size. Choice of implementation: If average of last 5 throughputs is higher than the highest bitrate, make the upper reservoir 0.5 * max buffer size, else 0.1 * max buffer size
+RESULT (6): This has a fairly substantial positive impact. Higher throughput cases experience much better performance, since they no longer need to wait to go up to max quality.
+
+Could combine (3) and (6) into (7):
+RESULT (7): The overall effect is slightly improved over (6), and substantially over (3). The higher throughput cases are slightly hurt by (3) due to its conservative nature.
