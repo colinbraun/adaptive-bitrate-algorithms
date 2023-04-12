@@ -105,32 +105,22 @@ def student_entrypoint(client_message: ClientMessage):
     predicted_throughput = harmonic_mean / (1 + error_max)
     # Combinations of possible choices of chunk qualities
     indices_list = list(range(client_message.quality_levels))
-    current_and_upcoming_indices = [indices_list] * min(LOOK_AHEAD_SIZE, (len(client_message.upcoming_quality_bitrates) + 1))
+    # min taken here in case we are at the end of the simulation where we don't have as many upcoming quality bitrates
+    current_and_upcoming_indices = [indices_list] * min(LOOK_AHEAD_SIZE, len(client_message.upcoming_quality_bitrates) + 1)
     combos = [p for p in itertools.product(*[client_message.quality_bitrates, *client_message.upcoming_quality_bitrates[0:W-1]])]
     combo_indices = [p for p in itertools.product(*current_and_upcoming_indices)]
     
-    # scores = [-100000000] * len(combos)
-    #   User Quality of Experience =    (Average chunk quality) * (Quality Coefficient) +
-    #                                   -(Number of changes in chunk quality) * (Variation Coefficient)
-    #                                   -(Amount of time spent rebuffering) * (Rebuffering Coefficient)
-    # quality score is dependent on the index purely (0, 1, or 2  in the 3-option case)
-    # variation score is dependent on both number of times and how far, but still only on quality indices (0, 1, or 2 in the 3-option case)
-    # rebuffer score is dependent soley on how much time was spent rebuffering
+    # Go through the different combinations and find the one that gives the highest score
     best_combo_index = 0
     best_combo_score = -100000
     for i, combo in enumerate(combos):
         combo_index_list = combo_indices[i]
-        # print(combo)
-        # print(combo_index_list)
+
+        # Quality score is determined solely by the index chosen (quality 0 < quality 1 < quality 2 < ...)
         quality_score = statistics.mean(combo_index_list) * client_message.quality_coefficient
-
-        # TODO: Will need to create combos by index, not by quality levels in order to determine how many switches we have made with that decision
-        # Question: When we are scoring a choice of chunk qualities, should we be counting the number of quality switches in that choice?
-        # Or is it dependent on the difference in quality from chunk to chunk, like how the paper describes?
-        variation_score = score_variation(combo_index_list, last_selected_index) * client_message.variation_coefficient
-
-        # Question: How to go about determining the time that would be spent rebuffering? I assume we base this on the predicted throughput and
-        # what the current buffer size would be at each chunk in the future
+        # Variations are computed based on difference in quality indices chosen. Lowest -> Highest is higher variation than Middle -> Highest
+        variation_score = calculate_variation(combo_index_list, last_selected_index) * client_message.variation_coefficient
+        # Rebuffer score is based on the number of seconds of rebuffer
         rebuffer_score = calculate_rebuffer_time(combo, [predicted_throughput] * LOOK_AHEAD_SIZE, client_message.buffer_seconds_until_empty, client_message.buffer_seconds_per_chunk) * client_message.rebuffering_coefficient
 
         total_score = quality_score - variation_score - rebuffer_score
@@ -147,7 +137,7 @@ prev_throughputs = deque([0]*5)
 last_selected_index = 0 
 W = 5
 
-def score_variation(indices, start_index=None):
+def calculate_variation(indices, start_index=None):
     """
     Compute the 'variation' of a list of indices. Sums the absolute values of the differences between entries in the list.
     """
