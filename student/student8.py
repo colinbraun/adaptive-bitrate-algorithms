@@ -2,6 +2,7 @@ from typing import List
 from collections import deque
 import statistics
 import itertools
+from math import exp, log
 
 # Adapted from code by Zach Peats
 
@@ -107,7 +108,7 @@ def student_entrypoint(client_message: ClientMessage):
     indices_list = list(range(client_message.quality_levels))
     # min taken here in case we are at the end of the simulation where we don't have as many upcoming quality bitrates
     current_and_upcoming_indices = [indices_list] * min(LOOK_AHEAD_SIZE, len(client_message.upcoming_quality_bitrates) + 1)
-    combos = [p for p in itertools.product(*[client_message.quality_bitrates, *client_message.upcoming_quality_bitrates[0:W-1]])]
+    combos = [p for p in itertools.product(*[client_message.quality_bitrates, *client_message.upcoming_quality_bitrates[0:LOOK_AHEAD_SIZE-1]])]
     combo_indices = [p for p in itertools.product(*current_and_upcoming_indices)]
     
     # Go through the different combinations and find the one that gives the highest score
@@ -122,9 +123,12 @@ def student_entrypoint(client_message: ClientMessage):
         variation_score = calculate_variation(combo_index_list, last_selected_index) * client_message.variation_coefficient
         # Rebuffer score is based on the number of seconds of rebuffer
         rebuffer_score = calculate_rebuffer_time(combo, [predicted_throughput] * LOOK_AHEAD_SIZE, client_message.buffer_seconds_until_empty, client_message.buffer_seconds_per_chunk) * client_message.rebuffering_coefficient
-        # Buffer size score determined as (buffer_coefficient)
+        # Buffer size score determined using expontential. Multiplied with total score.
+        buffer_score = calculate_buffer_score(combo, [predicted_throughput] * LOOK_AHEAD_SIZE, client_message.buffer_seconds_until_empty, client_message.buffer_max_size, client_message.buffer_seconds_per_chunk)
 
-        total_score = quality_score - variation_score - rebuffer_score
+        # total_score = quality_score - variation_score - rebuffer_score
+        total_score = (quality_score - variation_score - rebuffer_score) * buffer_score
+        # print(buffer_score)
         if total_score > best_combo_score:
             best_combo_index = i
             best_combo_score = total_score
@@ -136,7 +140,22 @@ def student_entrypoint(client_message: ClientMessage):
 first_chunks_count = 0
 prev_throughputs = deque([0]*5)
 last_selected_index = 0 
-W = 5
+
+def calculate_buffer_score(chunk_sizes, predicted_throughputs, current_buffer, max_buffer_size, chunk_duration):
+    """
+    Calculate a score based on how full the buffer will be after downloading the future chunks given predicted throughputs.
+    Score is between 0 to 1, following a curve of the form (1 - exp(-tau*B)), where B is final_predicted_buffer/max_buffer_size.
+    """
+    # Constant to determine how quickly the score ramps up. Below is set s.t. 30% buf -> score of 0.5.
+    tau = -log(0.5)/0.3
+    for i, chunk_size in enumerate(chunk_sizes):
+        throughput = predicted_throughputs[i]
+        download_time = chunk_size / throughput
+        current_buffer = current_buffer - download_time + chunk_duration
+        # If our current buffer goes negative, set it back to zero. Otherwise our final current buffer will not be accurate.
+        if current_buffer < 0:
+            current_buffer = 0
+    return 1 - exp(-tau*current_buffer/max_buffer_size)
 
 def calculate_variation(indices, start_index=None):
     """
@@ -169,6 +188,9 @@ def calculate_rebuffer_time(chunk_sizes, predicted_throughputs, current_buffer, 
         if current_buffer - download_time < 0:
             total_rebuffer += download_time - current_buffer
         current_buffer = current_buffer - download_time + chunk_duration
+        # If our current buffer goes negative, set it back to zero. Otherwise total rebuffer time will be larger than it should be.
+        if current_buffer < 0:
+            current_buffer = 0
     return total_rebuffer
 
 def max_error(iterable, mean):
