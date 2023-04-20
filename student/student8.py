@@ -123,10 +123,10 @@ def student_entrypoint(client_message: ClientMessage):
         # Variations are computed based on difference in quality indices chosen. Lowest -> Highest is higher variation than Middle -> Highest
         variation_score = calculate_variation(combo_index_list, last_selected_index) * client_message.variation_coefficient
         # Rebuffer score is based on the number of seconds of rebuffer
-        rebuffer_score = calculate_rebuffer_time(combo, [predicted_throughput] * LOOK_AHEAD_SIZE, client_message.buffer_seconds_until_empty, client_message.buffer_seconds_per_chunk) * client_message.rebuffering_coefficient
-        # Buffer size score determined using expontential. Multiplied with total score.
         predicted_throughputs = [predicted_throughput] * LOOK_AHEAD_SIZE
         rebuffer_score = calculate_rebuffer_time(combo, predicted_throughputs, client_message.buffer_seconds_until_empty, client_message.buffer_seconds_per_chunk) * client_message.rebuffering_coefficient
+        # Buffer size score determined using expontential. Multiplied with total score.
+        buffer_score = calculate_buffer_score(combo, predicted_throughputs, client_message.buffer_seconds_until_empty, client_message.buffer_max_size, client_message.buffer_seconds_per_chunk)
 
         # total_score = quality_score - variation_score - rebuffer_score
         total_score = (quality_score - variation_score - rebuffer_score) * buffer_score
