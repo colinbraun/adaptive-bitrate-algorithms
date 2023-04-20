@@ -2,6 +2,7 @@ from typing import List
 from collections import deque
 import statistics
 import itertools
+from util import *
 
 # Adapted from code by Zach Peats
 
@@ -136,47 +137,3 @@ first_chunks_count = 0
 prev_throughputs = deque([0]*5)
 last_selected_index = 0 
 W = 5
-
-def calculate_variation(indices, start_index=None):
-    """
-    Compute the 'variation' of a list of indices. Sums the absolute values of the differences between entries in the list.
-    """
-    total_var = 0
-    if start_index is None:
-        prev_index = indices[0]
-    else:
-        prev_index = start_index
-    for index in indices:
-        total_var += abs(index - prev_index)
-        prev_index = index
-    return total_var
-
-def calculate_rebuffer_time(chunk_sizes, predicted_throughputs, current_buffer, chunk_duration):
-    """
-    Compute how much rebuffer would take place given that we want to download the list of chunk sizes.
-    It is assumed we can download at the rates specified in the predicted throughputs during each chunk.
-    The current buffer size should be in seconds.
-    The chunk duration is how many seconds of video is contained in each chunk (assumed to be the same for each chunk).
-    
-    Returns: The number of seconds of rebuffer that will occur.
-    """
-    total_rebuffer = 0
-    for i, chunk_size in enumerate(chunk_sizes):
-        throughput = predicted_throughputs[i]
-        download_time = chunk_size / throughput
-        # Check if a rebuffer will occur
-        if current_buffer - download_time < 0:
-            total_rebuffer += download_time - current_buffer
-        current_buffer = current_buffer - download_time + chunk_duration
-    return total_rebuffer
-
-def max_error(iterable, mean):
-    """
-    Compute the maximum absolute percentage error of the iterable from the given mean
-    """
-    error_max = 0
-    for item in iterable:
-        error = abs((item - mean) / mean)
-        if error > error_max:
-            error_max = error
-    return error_max

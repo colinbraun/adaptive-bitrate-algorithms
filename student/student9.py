@@ -2,7 +2,6 @@ from typing import List
 from collections import deque
 import statistics
 import itertools
-from math import exp, log
 from util import *
 
 # Adapted from code by Zach Peats
@@ -89,22 +88,27 @@ def student_entrypoint(client_message: ClientMessage):
 
     :return: float Your quality choice. Must be one in the range [0 ... quality_levels - 1] inclusive.
     """
-    global first_chunks_count, prev_throughputs, last_selected_index
+    global first_chunks_count, prev_throughputs, last_selected_index, prev_time, prev_times
     LOOK_AHEAD_SIZE = 5
     # For the first 5 chunks, we can't predict a throughput. Just pick the lowest quality.
-    if first_chunks_count < 5:
+    if first_chunks_count < MIN_PAST_VALUES:
         first_chunks_count += 1
+        # Don't add the first throughput and time. It is zero.
+        if first_chunks_count == 1:
+            prev_time = client_message.total_seconds_elapsed
+            return 0
         prev_throughputs.append(client_message.previous_throughput)
-        prev_throughputs.popleft()
+        prev_times.append(prev_time)
+        prev_time = client_message.total_seconds_elapsed
         last_selected_index = 0
         return 0
-    # Update the previous throughputs
+    # Update the previous throughputs and times
     prev_throughputs.append(client_message.previous_throughput)
-    prev_throughputs.popleft()
-    # Predict the throughput
-    harmonic_mean = statistics.harmonic_mean(prev_throughputs)
-    error_max = max_error(prev_throughputs, harmonic_mean)
-    predicted_throughput = harmonic_mean / (1 + error_max)
+    prev_times.append(prev_time)
+    prev_time = client_message.total_seconds_elapsed
+    num_past_values = min(MAX_PAST_VALUES, len(prev_times))
+    # Create the olslr model (call model.predict() to predict)
+    model = olslr_tp_model(prev_times[-num_past_values:], prev_throughputs[-num_past_values:])
     # Combinations of possible choices of chunk qualities
     indices_list = list(range(client_message.quality_levels))
     # min taken here in case we are at the end of the simulation where we don't have as many upcoming quality bitrates
@@ -123,13 +127,11 @@ def student_entrypoint(client_message: ClientMessage):
         # Variations are computed based on difference in quality indices chosen. Lowest -> Highest is higher variation than Middle -> Highest
         variation_score = calculate_variation(combo_index_list, last_selected_index) * client_message.variation_coefficient
         # Rebuffer score is based on the number of seconds of rebuffer
-        rebuffer_score = calculate_rebuffer_time(combo, [predicted_throughput] * LOOK_AHEAD_SIZE, client_message.buffer_seconds_until_empty, client_message.buffer_seconds_per_chunk) * client_message.rebuffering_coefficient
-        # Buffer size score determined using expontential. Multiplied with total score.
-        predicted_throughputs = [predicted_throughput] * LOOK_AHEAD_SIZE
+        predicted_throughputs = predict_throughputs(model, combo, client_message.total_seconds_elapsed)
         rebuffer_score = calculate_rebuffer_time(combo, predicted_throughputs, client_message.buffer_seconds_until_empty, client_message.buffer_seconds_per_chunk) * client_message.rebuffering_coefficient
 
         # total_score = quality_score - variation_score - rebuffer_score
-        total_score = (quality_score - variation_score - rebuffer_score) * buffer_score
+        total_score = quality_score - variation_score - rebuffer_score
         # print(buffer_score)
         if total_score > best_combo_score:
             best_combo_index = i
@@ -140,5 +142,11 @@ def student_entrypoint(client_message: ClientMessage):
     return chosen_index
 
 first_chunks_count = 0
-prev_throughputs = deque([0]*5)
+# The minimum number of past throughputs before allowing predictions based on them
+MIN_PAST_VALUES = 5
+# The maximum number of past throughputs to use for predicting future throughputs
+MAX_PAST_VALUES = 5
+prev_throughputs = []
+prev_times = []
+prev_time = 0
 last_selected_index = 0 
