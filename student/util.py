@@ -2,6 +2,7 @@ import numpy as np
 from sklearn import linear_model
 from sklearn.metrics import mean_squared_error, r2_score
 from math import exp, log
+import matplotlib.pyplot as plt
 
 def calculate_buffer_score(chunk_sizes, predicted_throughputs, current_buffer, max_buffer_size, chunk_duration):
     """
@@ -74,7 +75,6 @@ def olslr_tp_model(past_times, past_throughputs):
     ----------
     past_times : Previous times where throughputs were measured.
     past_throughputs : The throughputs corresponding to the previous times.
-    future_times : The times to predict the throughput at (usually in the future).
 
     Returns
     -------
@@ -83,11 +83,35 @@ def olslr_tp_model(past_times, past_throughputs):
     # Make sure shapes are correct
     past_times = past_times.reshape(len(past_times.flatten()), 1)
     past_throughputs = past_throughputs.reshape(len(past_throughputs.flatten()), 1)
-    prediction_times = prediction_times.reshape(len(prediction_times.flatten()), 1)
     # Create the linear regression model
     regr = linear_model.LinearRegression()
     # Fit the linear regression model to the past data
     regr.fit(past_times, past_throughputs)
+    # Return the fitted model
+    return regr
+
+def wlslr_tp_model(past_times, past_throughputs):
+    """
+    Use weighted least squares linear regression to create a fitted model.
+
+    Parameters
+    ----------
+    past_times : Previous times where throughputs were measured.
+    past_throughputs : The throughputs corresponding to the previous times.
+
+    Returns
+    -------
+    regr : The fitted model.
+    """
+    # Make sure shapes are correct
+    past_times = past_times.reshape(len(past_times.flatten()), 1)
+    past_throughputs = past_throughputs.reshape(len(past_throughputs.flatten()), 1)
+    # Create the linear regression model
+    regr = linear_model.LinearRegression()
+    # TODO: Implement weights
+    weights = []
+    # Fit the linear regression model to the past data
+    regr.fit(past_times, past_throughputs, weights)
     # Return the fitted model
     return regr
 
@@ -100,8 +124,47 @@ def predict_throughputs(model, combo, current_time):
     model : The fitted model to use to predict future throughputs.
     combo : The future chunk sizes to predict the throughputs for.
     current_time : The time to start predicting values for.
-    """
-    # TODO: WIP. Need to fill this out.
-    for i, chunk_size in enumerate(combo):
-        tp = model.predict()
 
+    Returns
+    -------
+    ts : The start-times corresponding to the predicted throughputs for the chunks in the combo.
+    tps : The throughputs predicted for the chunks of combo.
+    """
+    tps = np.zeros([len(combo)])
+    ts = np.zeros([len(combo)])
+    for i, chunk_size in enumerate(combo):
+        tp = model.predict([[current_time]])[0, 0]
+        # tp cannot be negative, and ~0 values will make download time near infinite
+        if tp < 0.5:
+            tp = 0.5
+        tps[i] = tp
+        ts[i] = current_time
+        download_time = chunk_size / tp
+        current_time += download_time
+    return ts, tps
+
+def plot_predictions(model, past_times, past_throughputs, future_times, future_throughputs):
+    """
+    Plot the past and future throughputs in a manner that displays the prediction clearly.
+
+    Parameters
+    ----------
+    model : The model used to predict. Must have a predict() method.
+    past_times : Previous times where throughputs were measured.
+    past_throughputs : The throughputs corresponding to the previous times.
+    future_times : The future times corresponding to the predicted throughputs.
+    future_throughputs : The future throughputs.
+
+    Returns
+    -------
+    Nothing. Just plots the data.
+    """
+    plt.figure()
+    plt.scatter(past_times, past_throughputs)
+    ys = model.predict([[past_times[0]]])[0, 0]
+    ye = model.predict([[past_times[-1]]])[0, 0]
+    # Plot the prediction line
+    plt.plot([past_times[0], past_times[-1]], [ys, ye])
+    plt.plot(future_times, future_throughputs, '.-')
+    plt.legend(['Past Data', 'OLS Fit', 'Prediction'])
+    plt.show()
