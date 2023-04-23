@@ -4,7 +4,8 @@ import configparser
 import re
 
 config = configparser.ConfigParser()
-config.read('tests/mi_avg_lo_var.ini') 
+trace = 'lo_avg_lo_var'
+config.read(f'tests/{trace}.ini') 
 throughputs = []
 times = []
 first = True
@@ -20,4 +21,8 @@ for key in config['throughput']:
     prev_throughput = throughput
 
 plt.plot(times, throughputs, '.-')
-plt.show()
+plt.title(trace)
+plt.xlabel('Time (s)')
+plt.ylabel('Throughput (MB/s)')
+# plt.show()
+plt.savefig(f'{trace}.png')

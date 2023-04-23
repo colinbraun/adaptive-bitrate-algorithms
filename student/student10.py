@@ -115,7 +115,6 @@ def student_entrypoint(client_message: ClientMessage):
     current_and_upcoming_indices = [indices_list] * min(LOOK_AHEAD_SIZE, len(client_message.upcoming_quality_bitrates) + 1)
     combos = [p for p in itertools.product(*[client_message.quality_bitrates, *client_message.upcoming_quality_bitrates[0:LOOK_AHEAD_SIZE-1]])]
     combo_indices = [p for p in itertools.product(*current_and_upcoming_indices)]
-    # print(len(prev_throughputs))
     
     # Go through the different combinations and find the one that gives the highest score
     best_combo_index = 0
@@ -129,9 +128,7 @@ def student_entrypoint(client_message: ClientMessage):
         variation_score = calculate_variation(combo_index_list, last_selected_index) * client_message.variation_coefficient
         # Rebuffer score is based on the number of seconds of rebuffer
         predicted_times, predicted_throughputs = predict_throughputs(model, combo, client_message.total_seconds_elapsed, min(prev_throughputs), max(prev_throughputs))
-        # predicted_times, predicted_throughputs = predict_throughputs(model, combo, client_message.total_seconds_elapsed, 0.5, 4.5)
-        # if not np.all(np.isclose(prev_throughputs[-num_past_values:], prev_throughputs[-1])) and len(prev_throughputs) > 100:
-        # # if not np.all(np.isclose(prev_throughputs[-num_past_values:], prev_throughputs[-1])) and len(prev_throughputs):
+        # if not np.all(np.isclose(prev_throughputs[-num_past_values:], prev_throughputs[-1])):
         #     print(prev_throughputs)
         #     plot_predictions(model, prev_times[-num_past_values:], prev_throughputs[-num_past_values:], predicted_times, predicted_throughputs)
         #     break

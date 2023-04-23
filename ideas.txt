@@ -12,3 +12,8 @@ RESULT (6): This has a fairly substantial positive impact. Higher throughput cas
 
 Could combine (3) and (6) into (7):
 RESULT (7): The overall effect is slightly improved over (6), and substantially over (3). The higher throughput cases are slightly hurt by (3) due to its conservative nature.
+
+
+student8.py - Score attributed to buffer in MPC
+student9.py - OLS prediction
+student10.py - WLS prediction

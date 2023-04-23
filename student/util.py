@@ -115,7 +115,7 @@ def wlslr_tp_model(past_times, past_throughputs):
     # Return the fitted model
     return regr
 
-def predict_throughputs(model, combo, current_time):
+def predict_throughputs(model, combo, current_time, min_pred=None, max_pred=None):
     """
     Predict future throughputs for a particular combo using a given model.
 
@@ -135,8 +135,10 @@ def predict_throughputs(model, combo, current_time):
     for i, chunk_size in enumerate(combo):
         tp = model.predict([[current_time]])[0, 0]
         # tp cannot be negative, and ~0 values will make download time near infinite
-        if tp < 0.5:
-            tp = 0.5
+        if min_pred is not None and tp < min_pred:
+            tp = min_pred
+        elif max_pred is not None and tp > max_pred:
+            tp = max_pred
         tps[i] = tp
         ts[i] = current_time
         download_time = chunk_size / tp
