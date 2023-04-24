@@ -1,3 +1,6 @@
+#
+# THIS IS THE BBA-2 1.5x STICKIER QUALITY SWITCHING VERSION
+#
 from typing import List
 from pprint import pprint
 

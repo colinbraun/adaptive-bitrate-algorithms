@@ -1,3 +1,6 @@
+#
+# THIS IS THE BBA-2 DYNAMIC UPPER-RESERVOIR VERSION
+#
 from typing import List
 from pprint import pprint
 from collections import deque

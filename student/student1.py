@@ -1,3 +1,6 @@
+#
+# THIS IS THE BBA-2 BASELINE ALGORITHM VERSION
+#
 from typing import List
 from pprint import pprint
 

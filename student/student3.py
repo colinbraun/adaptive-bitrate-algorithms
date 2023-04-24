@@ -1,3 +1,6 @@
+#
+# THIS IS THE BBA-2 FIXED RESERVOIR SIZE VERSION
+#
 from typing import List
 from pprint import pprint
 
