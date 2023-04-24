@@ -140,23 +140,6 @@ prev_throughputs = deque([0]*5)
 last_selected_index = 0 
 W = 5
 
-
-def calculate_buffer_score(chunk_sizes, predicted_throughputs, current_buffer, max_buffer_size, chunk_duration):
-    """
-    Calculate a score based on how full the buffer will be after downloading the future chunks given predicted throughputs.
-    Score is between 0 to 1, following a curve of the form (1 - exp(-tau*B)), where B is final_predicted_buffer/max_buffer_size.
-    """
-    # Constant to determine how quickly the score ramps up. Below is set s.t. 30% buf -> score of 0.5.
-    tau = -log(0.5)/0.3
-    for i, chunk_size in enumerate(chunk_sizes):
-        throughput = predicted_throughputs[i]
-        download_time = chunk_size / throughput
-        current_buffer = current_buffer - download_time + chunk_duration
-        # If our current buffer goes negative, set it back to zero. Otherwise our final current buffer will not be accurate.
-        if current_buffer < 0:
-            current_buffer = 0
-    return 1 - exp(-tau*current_buffer/max_buffer_size)
-
 def calculate_variation(indices, start_index=None):
     """
     Compute the 'variation' of a list of indices. Sums the absolute values of the differences between entries in the list.
