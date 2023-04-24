@@ -137,9 +137,11 @@ def student_entrypoint(client_message: ClientMessage):
         # print(f"Predicted throughputs: {predicted_throughputs}")
         # print(f"Past throughputs: {prev_throughputs}")
         rebuffer_score = calculate_rebuffer_time(combo, predicted_throughputs, client_message.buffer_seconds_until_empty, client_message.buffer_seconds_per_chunk) * client_message.rebuffering_coefficient
+        # Buffer size score determined using expontential. Multiplied with total score.
+        buffer_score = calculate_buffer_score(combo, predicted_throughputs, client_message.buffer_seconds_until_empty, client_message.buffer_max_size, client_message.buffer_seconds_per_chunk)
 
         # total_score = quality_score - variation_score - rebuffer_score
-        total_score = quality_score - variation_score - rebuffer_score
+        total_score = (quality_score - variation_score - rebuffer_score) * buffer_score
         # print(buffer_score)
         if total_score > best_combo_score:
             best_combo_index = i

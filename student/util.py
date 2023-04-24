@@ -90,7 +90,7 @@ def olslr_tp_model(past_times, past_throughputs):
     # Return the fitted model
     return regr
 
-def wlslr_tp_model(past_times, past_throughputs):
+def wlslr_tp_model(past_times, past_throughputs, weights):
     """
     Use weighted least squares linear regression to create a fitted model.
 
@@ -98,6 +98,7 @@ def wlslr_tp_model(past_times, past_throughputs):
     ----------
     past_times : Previous times where throughputs were measured.
     past_throughputs : The throughputs corresponding to the previous times.
+    weights : The weights to place on the different throughputs. The right-most weight is the most recent throughput.
 
     Returns
     -------
@@ -108,8 +109,6 @@ def wlslr_tp_model(past_times, past_throughputs):
     past_throughputs = past_throughputs.reshape(len(past_throughputs.flatten()), 1)
     # Create the linear regression model
     regr = linear_model.LinearRegression()
-    # TODO: Implement weights
-    weights = []
     # Fit the linear regression model to the past data
     regr.fit(past_times, past_throughputs, weights)
     # Return the fitted model
