@@ -1,5 +1,5 @@
 #
-# THIS IS THE BBA-2 FIXED RESERVOIR SIZE VERSION
+# THIS IS THE BBA-2 2x STICKIER QUALITY SWITCHING VERSION
 # NOT THE FINAL VARIANT
 #
 from typing import List
@@ -89,12 +89,12 @@ def student_entrypoint(client_message: ClientMessage):
 
     :return: float Your quality choice. Must be one in the range [0 ... quality_levels - 1] inclusive.
     """
-    # THIS VARIANT TRIES A CONSTANT RESERVOIR SIZE, SINCE AT LOW BW IT CAN CAUSE HIGH VARIATION
+    # THIS VARIANT TRIES TO MAKE THE HIGHEST QUALITY STICKIER (see ideas.txt, (4))
     global first, min_rate, max_rate, X, upper_reservoir, startup, last_buffer_seconds, last_selected_index
     # pprint(vars(client_message))
     # If this is the first time, set starting variables and pick the lowest quality
     if first:
-        # print('first run')
+        # log('first run')
         min_rate, max_rate = find_extremes(client_message.upcoming_quality_bitrates)
         log(f"Min rate: {min_rate}, Max rate: {max_rate}")
         first = False
@@ -159,15 +159,14 @@ def rate_map(client_message: ClientMessage, last_selected_index):
     if client_message.previous_throughput == 0:
         return 0
     # log(X)
-    # reservoir = X - client_message.previous_throughput / bitrates[last_selected_index] * client_message.buffer_seconds_per_chunk * X
-    # # Make sure reservoir is a reasonable value (follows the idea in the paper)
-    # if reservoir < 2:
-    #     reservoir = 2
-    # elif reservoir > client_message.buffer_max_size/2:
-    #     reservoir = client_message.buffer_max_size/2
+    reservoir = X - client_message.previous_throughput / bitrates[last_selected_index] * client_message.buffer_seconds_per_chunk * X
+    # Make sure reservoir is a reasonable value (follows the idea in the paper)
+    if reservoir < 2:
+        reservoir = 2
+    elif reservoir > client_message.buffer_max_size/2:
+        reservoir = client_message.buffer_max_size/2
     # The below improves performance for low BW cases, significantly reducing variation while improving rebuffer time
-    # This is equivalent to hardcoding to 10 for the test cases provided
-    reservoir = client_message.buffer_max_size / 3
+    # reservoir = 10
     # The cushion is whatever remains of the buffer that isn't lower or upper reservoir
     cushion = client_message.buffer_max_size - reservoir - upper_reservoir
     log(f"Occupancy: {occupancy}")
@@ -206,8 +205,8 @@ def rate_map(client_message: ClientMessage, last_selected_index):
             prev_index -= 1
         chosen_index = prev_index
         # If we previously chose the max quality, stick to it more aggressively (only switch if differs by 2 levels or more)
-        # if last_selected_index == client_message.quality_levels - 1 and last_selected_index - chosen_index < 2:
-        #     chosen_index = last_selected_index
+        if last_selected_index == client_message.quality_levels - 1 and last_selected_index - chosen_index < 2:
+            chosen_index = last_selected_index
         log(f"DChoosing quality index {chosen_index} based on mapped rate. reservoir = {reservoir}, mapped_rate = {mapped_rate}, choices = {bitrates}")
         return chosen_index
     else:
@@ -234,4 +233,4 @@ def find_extremes(arr):
 DEBUG = False
 def log(s):
     if DEBUG:
-        print(s)
+        log(s)

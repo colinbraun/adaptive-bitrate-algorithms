@@ -1,6 +1,6 @@
 #
-# THIS IS THE BBA-2 DYNAMIC UPPER-RESERVOIR VERSION
-# NOT THE FINAL VARIANT
+# THIS IS THE BBA-2 DYNAMIC UPPER-RESERVOIR + CONSTANT LOWER-RESERVOIR VERSION
+# THIS IS THE FINAL VARIANT ALGORITHM OF BBA-2
 #
 from typing import List
 from pprint import pprint
@@ -171,12 +171,13 @@ def rate_map(client_message: ClientMessage, last_selected_index):
     if client_message.previous_throughput == 0:
         return 0
     # log(X)
-    reservoir = X - client_message.previous_throughput / bitrates[last_selected_index] * client_message.buffer_seconds_per_chunk * X
-    # Make sure reservoir is a reasonable value (follows the idea in the paper)
-    if reservoir < 2:
-        reservoir = 2
-    elif reservoir > client_message.buffer_max_size/2:
-        reservoir = client_message.buffer_max_size/2
+    # reservoir = X - client_message.previous_throughput / bitrates[last_selected_index] * client_message.buffer_seconds_per_chunk * X
+    # # Make sure reservoir is a reasonable value (follows the idea in the paper)
+    # if reservoir < 2:
+    #     reservoir = 2
+    # elif reservoir > client_message.buffer_max_size/2:
+    #     reservoir = client_message.buffer_max_size/2
+    reservoir = client_message.buffer_max_size / 3
     # The below improves performance for low BW cases, significantly reducing variation while improving rebuffer time
     # reservoir = 10
     # The cushion is whatever remains of the buffer that isn't lower or upper reservoir

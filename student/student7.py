@@ -1,11 +1,10 @@
 #
-# THIS IS THE BBA-2 DYNAMIC UPPER-RESERVOIR + CONSTANT LOWER-RESERVOIR VERSION
-# THIS IS THE FINAL VARIANT ALGORITHM OF BBA-2
+# THIS IS THE ROBUSTMPC BASELINE ALGORITHM (BA) VERSION
 #
 from typing import List
-from pprint import pprint
 from collections import deque
 import statistics
+import itertools
 
 # Adapted from code by Zach Peats
 
@@ -91,160 +90,99 @@ def student_entrypoint(client_message: ClientMessage):
 
     :return: float Your quality choice. Must be one in the range [0 ... quality_levels - 1] inclusive.
     """
-    global first, min_rate, max_rate, X, upper_reservoir, startup, last_buffer_seconds, last_selected_index
-    # pprint(vars(client_message))
-    # If this is the first time, set starting variables and pick the lowest quality
-    if first:
-        # log('first run')
-        min_rate, max_rate = find_extremes(client_message.upcoming_quality_bitrates)
-        log(f"Min rate: {min_rate}, Max rate: {max_rate}")
-        first = False
-        X = client_message.buffer_max_size * 2
-        # Set the upper reservoir size to be at the 90% point (last 10% of buffer)
-        upper_reservoir = 0.1 * client_message.buffer_max_size
-        # Try setting upper reservoir to 0.25
-        # upper_reservoir = 0.25 * client_message.buffer_max_size
-        # Update the last buffer seconds (not really necessary, starts at 0 anyway)
-        last_buffer_seconds = client_message.buffer_seconds_until_empty
-        # Just pick the lowest quality for the first call. Want to minimize rebuffering.
+    global first_chunks_count, prev_throughputs, last_selected_index
+    LOOK_AHEAD_SIZE = 5
+    # For the first 5 chunks, we can't predict a throughput. Just pick the lowest quality.
+    if first_chunks_count < 5:
+        first_chunks_count += 1
+        prev_throughputs.append(client_message.previous_throughput)
+        prev_throughputs.popleft()
+        last_selected_index = 0
         return 0
-    # ---------------------------STARTUP PHASE START--------------------------
-    if startup:
-        v = client_message.buffer_seconds_per_chunk
-        delta_b = client_message.buffer_seconds_until_empty - last_buffer_seconds
-        log(f"In startup phase, delta b = {delta_b}")
-        last_buffer_seconds = client_message.buffer_seconds_until_empty
-        # Following the formula to determine if we should step up a quality level:
-        if delta_b > 0.875 * v:
-            startup_index = last_selected_index + 1 if last_selected_index != client_message.quality_levels - 1 else last_selected_index
-            chunk_map_index = rate_map(client_message, last_selected_index)
-            if chunk_map_index > startup_index:
-                log(f"Exiting startup phase due to chunk map index suggesting higher (startup index: {startup_index}, chunk map index: {chunk_map_index})")
-                startup = False
-                last_selected_index = chunk_map_index
-                return chunk_map_index
-            else:
-                last_selected_index = startup_index
-                return startup_index
-        elif delta_b < 0:
-            log(f"Exiting startup phase due buffer size decreasing (delta B < 0)")
-            startup = False
-            # Don't return here, move to next section to choose the quality index
-        else:
-            # Otherwise jsut return the last_selected_index.
-            return last_selected_index
-    # -------------------STARTUP PHASE END-------------------
-
-    # ---------------STEADY STATE PHASE START------------------
-    # log(client_message.previous_throughput)
+    # Update the previous throughputs
     prev_throughputs.append(client_message.previous_throughput)
     prev_throughputs.popleft()
-    chosen_index = rate_map(client_message, last_selected_index)
-    log(f"Chosen quality index: {chosen_index}")
-    # return 0  # Let's see what happens if we select the lowest bitrate every time
+    # Predict the throughput
+    harmonic_mean = statistics.harmonic_mean(prev_throughputs)
+    error_max = max_error(prev_throughputs, harmonic_mean)
+    predicted_throughput = harmonic_mean / (1 + error_max)
+    # Combinations of possible choices of chunk qualities
+    indices_list = list(range(client_message.quality_levels))
+    # min taken here in case we are at the end of the simulation where we don't have as many upcoming quality bitrates
+    current_and_upcoming_indices = [indices_list] * min(LOOK_AHEAD_SIZE, len(client_message.upcoming_quality_bitrates) + 1)
+    combos = [p for p in itertools.product(*[client_message.quality_bitrates, *client_message.upcoming_quality_bitrates[0:W-1]])]
+    combo_indices = [p for p in itertools.product(*current_and_upcoming_indices)]
+    
+    # Go through the different combinations and find the one that gives the highest score
+    best_combo_index = 0
+    best_combo_score = -100000
+    for i, combo in enumerate(combos):
+        combo_index_list = combo_indices[i]
+
+        # Quality score is determined solely by the index chosen (quality 0 < quality 1 < quality 2 < ...)
+        quality_score = statistics.mean(combo_index_list) * client_message.quality_coefficient
+        # Variations are computed based on difference in quality indices chosen. Lowest -> Highest is higher variation than Middle -> Highest
+        variation_score = calculate_variation(combo_index_list, last_selected_index) * client_message.variation_coefficient
+        # Rebuffer score is based on the number of seconds of rebuffer
+        rebuffer_score = calculate_rebuffer_time(combo, [predicted_throughput] * LOOK_AHEAD_SIZE, client_message.buffer_seconds_until_empty, client_message.buffer_seconds_per_chunk) * client_message.rebuffering_coefficient
+
+        total_score = quality_score - variation_score - rebuffer_score
+        if total_score > best_combo_score:
+            best_combo_index = i
+            best_combo_score = total_score
+
+    chosen_index = combo_indices[best_combo_index][0]
     last_selected_index = chosen_index
     return chosen_index
-    # -------------------STEADY STATE PHASE END----------------------
 
-first = True
-startup = True
-last_buffer_seconds = 0
-last_selected_index = 0
-min_rate = None
-max_rate = None
-X = None
-upper_reservoir = None
+first_chunks_count = 0
 prev_throughputs = deque([0]*5)
+last_selected_index = 0 
+W = 5
 
-def rate_map(client_message: ClientMessage, last_selected_index):
+def calculate_variation(indices, start_index=None):
     """
-    Maps buffer occupancy to a rate from among the rates provided. Prefers maintaining the last_selected_index.
+    Compute the 'variation' of a list of indices. Sums the absolute values of the differences between entries in the list.
     """
-    global min_rate, max_rate, X, upper_reservoir
-    bitrates = client_message.quality_bitrates
-    if statistics.mean(prev_throughputs) > bitrates[client_message.quality_levels - 1]:
-        upper_reservoir = 0.5 * client_message.buffer_max_size
+    total_var = 0
+    if start_index is None:
+        prev_index = indices[0]
     else:
-        upper_reservoir = 0.1 * client_message.buffer_max_size
+        prev_index = start_index
+    for index in indices:
+        total_var += abs(index - prev_index)
+        prev_index = index
+    return total_var
 
-    occupancy = client_message.buffer_seconds_until_empty / client_message.buffer_max_size
-    if client_message.previous_throughput == 0:
-        return 0
-    # log(X)
-    # reservoir = X - client_message.previous_throughput / bitrates[last_selected_index] * client_message.buffer_seconds_per_chunk * X
-    # # Make sure reservoir is a reasonable value (follows the idea in the paper)
-    # if reservoir < 2:
-    #     reservoir = 2
-    # elif reservoir > client_message.buffer_max_size/2:
-    #     reservoir = client_message.buffer_max_size/2
-    reservoir = client_message.buffer_max_size / 3
-    # The below improves performance for low BW cases, significantly reducing variation while improving rebuffer time
-    # reservoir = 10
-    # The cushion is whatever remains of the buffer that isn't lower or upper reservoir
-    cushion = client_message.buffer_max_size - reservoir - upper_reservoir
-    log(f"Occupancy: {occupancy}")
-    r_max = bitrates[client_message.quality_levels - 1]
-    r_min = bitrates[0]
-    # r_max = max_rate
-    # r_min = min_rate
-    # slope = (r_max - r_min) / (client_message.buffer_seconds_until_empty - reservoir)
-    if (cushion != 0):
-        slope = (r_max - r_min) / cushion
-    else:
-        # Don't care about this case
-        slope = 0
-    # log(f"Buffer seconds until empty: {client_message.buffer_seconds_until_empty}")
-    log(f"Reservoir: {reservoir}")
-    # log(f"Slope: {slope}")
-    mapped_rate = (client_message.buffer_seconds_until_empty - reservoir) * slope + r_min
-    prev_index = last_selected_index - 1 if last_selected_index != 0 else last_selected_index
-    next_index = last_selected_index + 1 if last_selected_index != client_message.quality_levels - 1 else last_selected_index
-    if client_message.buffer_seconds_until_empty < reservoir:
-        # If our buffer is below the reservoir, choose the lowest quality.
-        chosen_index = 0
-        log(f"Choosing quality index {chosen_index} because buffer ({client_message.buffer_seconds_until_empty}) below reservoir ({reservoir})")
-        return chosen_index
-    elif client_message.buffer_seconds_until_empty >= reservoir + cushion:
-        chosen_index = client_message.quality_levels - 1
-        log(f"Choosing quality index {chosen_index} because buffer ({client_message.buffer_seconds_until_empty}) is above upper reservoir")
-        return chosen_index
-    # TODO: Handle the middle (linear) section of the map from occupancy to video rate
-    elif next_index != last_selected_index and mapped_rate >= bitrates[next_index]:
-        # Identify what next_index should be. Increment the index until mapped rate is no longer larger than the next index
-        while next_index < client_message.quality_levels - 1 and mapped_rate >= bitrates[next_index + 1]:
-            next_index += 1
-        chosen_index = next_index
-        log(f"UChoosing quality index {chosen_index} based on mapped rate. reservoir = {reservoir}, mapped_rate = {mapped_rate}, choices = {bitrates}")
-        return chosen_index
-    elif prev_index != last_selected_index and mapped_rate <= bitrates[prev_index]:
-        # Identify what prev_index should be. Decrement the index until mapped rate is smaller than the previous index
-        while prev_index > 0 and mapped_rate <= bitrates[prev_index - 1]:
-            prev_index -= 1
-        chosen_index = prev_index
-        log(f"DChoosing quality index {chosen_index} based on mapped rate. reservoir = {reservoir}, mapped_rate = {mapped_rate}, choices = {bitrates}")
-        return chosen_index
-    else:
-        # Otherwise just return the previous rate (don't change)
-        log(f"Choosing quality index {last_selected_index} based on mapped rate. reservoir = {reservoir}, mapped_rate = {mapped_rate}, choices = {bitrates}")
-        return last_selected_index
+def calculate_rebuffer_time(chunk_sizes, predicted_throughputs, current_buffer, chunk_duration):
+    """
+    Compute how much rebuffer would take place given that we want to download the list of chunk sizes.
+    It is assumed we can download at the rates specified in the predicted throughputs during each chunk.
+    The current buffer size should be in seconds.
+    The chunk duration is how many seconds of video is contained in each chunk (assumed to be the same for each chunk).
     
-
-def find_extremes(arr):
+    Returns: The number of seconds of rebuffer that will occur.
     """
-    Find the minimum and maximum values in arr and return them. arr must be a list of lists
-    """
-    min_val = 30000000
-    max_val = -30000000
-    for sub_arr in arr:
-        for item in sub_arr:
-            if item < min_val:
-                min_val = item
-            if item > max_val:
-                max_val = item
-    
-    return min_val, max_val
+    total_rebuffer = 0
+    for i, chunk_size in enumerate(chunk_sizes):
+        throughput = predicted_throughputs[i]
+        download_time = chunk_size / throughput
+        # Check if a rebuffer will occur
+        if current_buffer - download_time < 0:
+            total_rebuffer += download_time - current_buffer
+        current_buffer = current_buffer - download_time + chunk_duration
+        # If our current buffer goes negative, set it back to zero. Otherwise total rebuffer time will be larger than it should be.
+        if current_buffer < 0:
+            current_buffer = 0
+    return total_rebuffer
 
-DEBUG = False
-def log(s):
-    if DEBUG:
-        print(s)
+def max_error(iterable, mean):
+    """
+    Compute the maximum absolute percentage error of the iterable from the given mean
+    """
+    error_max = 0
+    for item in iterable:
+        error = abs((item - mean) / mean)
+        if error > error_max:
+            error_max = error
+    return error_max
